@@ -119,7 +119,7 @@ The explaination comes from 'rustc --explain=ID'."
   '(("rustDocument/diagnosticsBegin" . (lambda (_w _p)))
     ("rustDocument/diagnosticsEnd" .
      (lambda (w _p)
-       (when (< (cl-decf (gethash w lsp-rust--diag-counters 0)) 0)
+       (when (<= (cl-decf (gethash w lsp-rust--diag-counters 0)) 0)
 	 (setq lsp-status nil))))
     ("rustDocument/beginBuild" .
      (lambda (w _p)
