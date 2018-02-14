@@ -86,7 +86,6 @@ The explaination comes from 'rustc --explain=ID'."
 (defun lsp-rust-find-implementations ()
   "List all implementation blocks for a trait, struct, or enum at point."
   (interactive)
-  (lsp--send-changes lsp--cur-workspace)
   (let* ((impls (lsp--send-request (lsp--make-request
                                     "rustDocument/implementations"
                                     (lsp--text-document-position-params))))
