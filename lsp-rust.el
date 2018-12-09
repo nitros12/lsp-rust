@@ -27,7 +27,7 @@
 
 ;;; Code:
 
-(require 'lsp-mode)
+(require 'lsp)
 (require 'cl-lib)
 (require 'json)
 (require 'font-lock)
@@ -109,12 +109,12 @@ The explaination comes from 'rustc --explain=ID'."
 (defun lsp-rust--get-root ()
   (let (dir)
     (unless
-	(ignore-errors
-	  (let* ((output (shell-command-to-string "cargo locate-project"))
-		 (js (json-read-from-string output)))
-	    (setq dir (cdr (assq 'root js)))))
+        (ignore-errors
+          (let* ((output (shell-command-to-string "cargo metadata --no-deps"))
+                 (js (json-read-from-string output)))
+            (setq dir (cdr (assq 'workspace-root js)))))
       (error "Couldn't find root for project at %s" default-directory))
-    (file-name-directory dir)))
+    dir))
 
 (define-inline lsp-rust--as-percent (fraction)
   (inline-quote (format "%d%%" (round (* ,fraction 100)))))
@@ -123,22 +123,22 @@ The explaination comes from 'rustc --explain=ID'."
   '(("window/progress" .
      (lambda (workspace progress)
        (let ((id (gethash "id" progress))
-	     (message (gethash "message" progress))
-	     (percentage (gethash "percentage" progress))
-	     (title (gethash "title" progress))
-	     (workspace-progress (gethash workspace lsp-rust--running-progress)))
-	 (if (gethash "done" progress)
-	     (setq workspace-progress (delete id workspace-progress))
-	   (delete-dups workspace-progress)
-	   (push id workspace-progress))
-	 (puthash workspace workspace-progress lsp-rust--running-progress)
-	 (setq lsp-status
-	       (if workspace-progress
-		   (cond
-		    ((numberp percentage) (lsp-rust--as-percent percentage))
-		    (message (format "(%s)" message))
-		    (title (format "(%s)" (downcase title))))
-		 nil)))))
+             (message (gethash "message" progress))
+             (percentage (gethash "percentage" progress))
+             (title (gethash "title" progress))
+             (workspace-progress (gethash workspace lsp-rust--running-progress)))
+         (if (gethash "done" progress)
+             (setq workspace-progress (delete id workspace-progress))
+           (delete-dups workspace-progress)
+           (push id workspace-progress))
+         (puthash workspace workspace-progress lsp-rust--running-progress)
+         (setq lsp-status
+               (if workspace-progress
+                   (cond
+                    ((numberp percentage) (lsp-rust--as-percent percentage))
+                    (message (format "(%s)" message))
+                    (title (format "(%s)" (downcase title))))
+                 nil)))))
     ;; From rls-vscode:
     ;; FIXME these are legacy notifications used by RLS ca jan 2018.
     ;; remove once we're certain we've progress on.
@@ -146,7 +146,7 @@ The explaination comes from 'rustc --explain=ID'."
     ("rustDocument/diagnosticsEnd" .
      (lambda (w _p)
        (when (<= (cl-decf (gethash w lsp-rust--diag-counters 0)) 0)
-	 (setq lsp-status nil))))
+         (setq lsp-status nil))))
     ("rustDocument/beginBuild" .
      (lambda (w _p)
        (cl-incf (gethash w lsp-rust--diag-counters 0))
@@ -155,20 +155,27 @@ The explaination comes from 'rustc --explain=ID'."
 (defun lsp-rust--render-string (str)
   (condition-case nil
       (with-temp-buffer
-	(delay-mode-hooks (rust-mode))
-	(insert str)
-	(font-lock-ensure)
-	(buffer-string))
+        (delay-mode-hooks (rust-mode))
+        (insert str)
+        (font-lock-ensure)
+        (buffer-string))
     (error str)))
 
 (defun lsp-rust--initialize-client (client)
   (mapcar #'(lambda (p) (lsp-client-on-notification client (car p) (cdr p)))
-	  lsp-rust--handlers)
+          lsp-rust--handlers)
   (lsp-provide-marked-string-renderer client "rust" #'lsp-rust--render-string))
 
-(lsp-define-stdio-client lsp-rust "rust" #'lsp-rust--get-root nil
-			 :command-fn #'lsp-rust--rls-command
-			 :initialize #'lsp-rust--initialize-client)
+;; (lsp-define-stdio-client lsp-rust "rust" #'lsp-rust--get-root nil
+;;                          :command-fn #'lsp-rust--rls-command
+;;                          :initialize #'lsp-rust--initialize-client)
+
+(lsp-register-client
+ (make-lsp-client
+  :new-connection (lsp-stdio-connection #'lsp-rust--rls-command)
+  :notification-handlers (ht<-alist lsp-rust--handlers)
+  :major-modes '(rust-mode toml-mode)
+  :server-id 'rust-rls))
 
 (defun lsp-rust--set-configuration ()
   (lsp--set-configuration `(:rust ,lsp-rust--config-options)))
